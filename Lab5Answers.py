@@ -431,6 +431,23 @@ def test_set_value() -> bool:
     return True
 
 
+def test_set_value_rejects_non_list() -> bool:
+    q = NQubitSystem(2)
+    try:
+        q.set_value("not a list")
+        return False
+    except ValueError:
+        return True
+
+
+def test_init_invalid_num_qubits() -> bool:
+    try:
+        _ = NQubitSystem(0)
+        return False
+    except ValueError:
+        return True
+
+
 def test_get_value_vector() -> bool:
     q = NQubitSystem(3)
     state = [0.0]*8
@@ -480,6 +497,26 @@ def test_apply_not() -> bool:
     return True
 
 
+def test_apply_not_three_qubits_mapping() -> bool:
+    q = NQubitSystem(3)
+    q.set_value([1.0] + [0.0] * 7)  # |000>
+    q.apply_not(1)  # flip middle qubit
+    expected = [0.0] * 8
+    expected[2] = 1.0  # |010>
+    return compare_lists(q.state, expected)
+
+
+def test_apply_not_big_endian_mapping() -> bool:
+    q = NQubitSystem(3)
+    state = [0.0] * 8
+    state[1] = 1.0  # |001>
+    q.set_value(state)
+    q.apply_not(0)  # flip MSB
+    expected = [0.0] * 8
+    expected[5] = 1.0  # |101>
+    return compare_lists(q.state, expected)
+
+
 def test_apply_h() -> bool:
     q = NQubitSystem(2)
     inv_sqrt2 = 1.0 / (2**0.5)
@@ -503,7 +540,7 @@ def test_apply_h() -> bool:
     except IndexError:
         pass
     
-    # Test 3: H on |10> gives (|00> - |10>)/sqrt2
+    # Test 4: H on |10> gives (|00> - |10>)/sqrt2
     q.set_value([0.0, 0.0, 1.0, 0.0])  # |10>
     q.apply_h(0)
     if not compare_lists(
@@ -520,6 +557,15 @@ def test_apply_h() -> bool:
 
 
     return True
+
+
+def test_apply_h_then_h_identity() -> bool:
+    q = NQubitSystem(2)
+    state = [0.0, 1.0, 0.0, 0.0]  # |01>
+    q.set_value(state)
+    q.apply_h(0)
+    q.apply_h(0)
+    return compare_lists(q.state, state)
 
 
 def test_apply_z() -> bool:
@@ -544,7 +590,7 @@ def test_apply_z() -> bool:
     except IndexError:
         pass
 
-    # Test 3: Z on |00> does nothing
+    # Test 4: Z on |00> does nothing
     q.set_value([1.0, 0.0, 0.0, 0.0])
     q.apply_z(0)
     if not compare_lists(q.state, [1.0, 0.0, 0.0, 0.0]):
@@ -552,6 +598,16 @@ def test_apply_z() -> bool:
 
 
     return True
+
+
+def test_apply_z_hzh_equals_x() -> bool:
+    q = NQubitSystem(2)
+    q.set_value([1.0, 0.0, 0.0, 0.0])  # |00>
+    q.apply_h(1)
+    q.apply_z(1)
+    q.apply_h(1)
+    expected = [0.0, 1.0, 0.0, 0.0]  # |01>
+    return compare_lists(q.state, expected)
 
 
 def test_apply_cnot() -> bool:
@@ -591,6 +647,43 @@ def test_apply_cnot() -> bool:
     return True
 
 
+def test_apply_cnot_control_off() -> bool:
+    q = NQubitSystem(2)
+    q.set_value([0.0, 1.0, 0.0, 0.0])  # |01> control=0 off
+    q.apply_cnot(0, 1)
+    return compare_lists(q.state, [0.0, 1.0, 0.0, 0.0])
+
+
+def test_apply_cnot_negative_index() -> bool:
+    q = NQubitSystem(2)
+    try:
+        q.apply_cnot(-1, 1)
+        return False
+    except IndexError:
+        return True
+
+
+def test_apply_cnot_three_qubits() -> bool:
+    q = NQubitSystem(3)
+    state = [0.0] * 8
+    state[4] = 1.0  # |100>
+    q.set_value(state)
+    q.apply_cnot(0, 2)
+    expected = [0.0] * 8
+    expected[5] = 1.0  # |101>
+    return compare_lists(q.state, expected)
+
+
+def test_apply_cnot_creates_bell_state() -> bool:
+    q = NQubitSystem(2)
+    inv_sqrt2 = 1.0 / (2**0.5)
+    q.set_value([1.0, 0.0, 0.0, 0.0])
+    q.apply_h(0)
+    q.apply_cnot(0, 1)
+    expected = [inv_sqrt2, 0.0, 0.0, inv_sqrt2]
+    return compare_lists(q.state, expected)
+
+
 def test_apply_swap() -> bool:
     q = NQubitSystem(2)
 
@@ -620,6 +713,27 @@ def test_apply_swap() -> bool:
         pass
 
     return True
+
+
+def test_apply_swap_twice_identity() -> bool:
+    q = NQubitSystem(3)
+    state = [0.0] * 8
+    state[5] = 1.0  # |101>
+    q.set_value(state)
+    q.apply_swap(0, 2)
+    q.apply_swap(0, 2)
+    return compare_lists(q.state, state)
+
+
+def test_apply_swap_non_adjacent_three_qubits() -> bool:
+    q = NQubitSystem(3)
+    state = [0.0] * 8
+    state[4] = 1.0  # |100>
+    q.set_value(state)
+    q.apply_swap(0, 2)
+    expected = [0.0] * 8
+    expected[1] = 1.0  # |001>
+    return compare_lists(q.state, expected)
 
 
 def test_measure() -> bool:
@@ -658,16 +772,57 @@ def test_measure() -> bool:
     return True
 
 
+def test_measure_collapse_superposition_three_qubits() -> bool:
+    inv_sqrt2 = 1.0 / (2**0.5)
+    for _ in range(10):
+        q = NQubitSystem(3)
+        state = [0.0] * 8
+        state[0] = inv_sqrt2  # |000>
+        state[7] = inv_sqrt2  # |111>
+        q.set_value(state)
+        result = q.measure()
+        if result not in ["000", "111"]:
+            return False
+        if result == "000" and not compare_lists(q.state, [1.0] + [0.0] * 7):
+            return False
+        if result == "111" and not compare_lists(q.state, [0.0] * 7 + [1.0]):
+            return False
+    return True
+
+
+def test_measure_returns_correct_length() -> bool:
+    q = NQubitSystem(4)
+    q.set_value([1.0] + [0.0] * 15)
+    result = q.measure()
+    if len(result) != 4:
+        return False
+    return all(ch in ("0", "1") for ch in result)
+
+
 def run_tests() -> None:
     tests = [
         ("test_set_value", test_set_value),
+        ("test_set_value_rejects_non_list", test_set_value_rejects_non_list),
+        ("test_init_invalid_num_qubits", test_init_invalid_num_qubits),
         ("test_get_value_vector", test_get_value_vector),
         ("test_apply_not", test_apply_not),
+        ("test_apply_not_three_qubits_mapping", test_apply_not_three_qubits_mapping),
+        ("test_apply_not_big_endian_mapping", test_apply_not_big_endian_mapping),
         ("test_apply_h", test_apply_h),
+        ("test_apply_h_then_h_identity", test_apply_h_then_h_identity),
         ("test_apply_z", test_apply_z),
+        ("test_apply_z_hzh_equals_x", test_apply_z_hzh_equals_x),
         ("test_apply_cnot", test_apply_cnot),
+        ("test_apply_cnot_control_off", test_apply_cnot_control_off),
+        ("test_apply_cnot_negative_index", test_apply_cnot_negative_index),
+        ("test_apply_cnot_three_qubits", test_apply_cnot_three_qubits),
+        ("test_apply_cnot_creates_bell_state", test_apply_cnot_creates_bell_state),
         ("test_apply_swap", test_apply_swap),
+        ("test_apply_swap_twice_identity", test_apply_swap_twice_identity),
+        ("test_apply_swap_non_adjacent_three_qubits", test_apply_swap_non_adjacent_three_qubits),
         ("test_measure", test_measure),
+        ("test_measure_collapse_superposition_three_qubits", test_measure_collapse_superposition_three_qubits),
+        ("test_measure_returns_correct_length", test_measure_returns_correct_length),
     ]
 
     for name, fn in tests:
@@ -678,7 +833,6 @@ def run_tests() -> None:
             result = False
 
         print(f"{name}: {'PASS' if result else 'FAIL'}")
-
 
 # %% [markdown]
 # ## Task 3: Implement `NQubitSystem`
@@ -964,74 +1118,35 @@ class BernVaz(Oracle):
     def _validate(self, system: "NQubitSystem") -> str:
         if len(self.codes) != 1:
             raise IndexError("BernVaz expects exactly one code")
-
-        secret_code = self.codes[0]
-
-        for ch in secret_code:
-            if ch != "0" and ch != "1":
-                raise ValueError("Code must be a binary string")
-
-        expected_qubits = len(secret_code) + 1
-        if system.num_qubits != expected_qubits:
-            raise IndexError("System qubit count must be len(code) + 1")
-
-        return secret_code
+        code = self.codes[0]
+        if len(code) != 3:
+            raise ValueError("BernVaz expects a 3-bit code")
+        for ch in code:
+            if ch not in ("0", "1"):
+                raise ValueError("Code must be binary")
+        if system.num_qubits != 4:
+            raise IndexError("BernVaz expects a 4-qubit system")
+        return code
 
     def pre_probe(self, system: "NQubitSystem") -> None:
-        reset_state = [0.0] * (2 ** system.num_qubits)
-        reset_state[0] = 1.0
-        system.set_value(reset_state)
+        self._validate(system)
+        # Apply H to ALL qubits
+        for i in range(system.num_qubits):
+            system.apply_h(i)
 
-        secret_code = self._validate(system)
-
-        # The response qubit is the last qubit
-        response_qubit_index = len(secret_code)
-        system.apply_not(response_qubit_index)
-
-        for qubit_index in range(system.num_qubits):
-            system.apply_h(qubit_index)
-
+    # A bunch of CNOTs
     def probe(self, system: "NQubitSystem") -> None:
-        secret_code = self._validate(system)
-        number_of_input_qubits = len(secret_code)
-
-        response_bit_position = system.num_qubits - 1 - number_of_input_qubits
-        response_mask = 1 << response_bit_position
-
-        updated_state = system.state.copy()
-
-        for state_index in range(len(system.state)):
-            # Only process states where response bit = 0
-            if (state_index & response_mask) != 0:
-                continue
-
-            # Compute dot product s · x (mod 2)
-            dot_product = 0
-
-            for qubit_i in range(len(secret_code)):
-                if secret_code[qubit_i] == "1":
-                    bit_position = system.num_qubits - 1 - qubit_i
-                    bit_mask = 1 << bit_position
-
-                    if (state_index & bit_mask) != 0:
-                        dot_product ^= 1
-
-            # Apply PHASE, not SWAP
-            if dot_product == 1:
-                paired_index = state_index | response_mask
-
-                updated_state[state_index] *= -1
-                updated_state[paired_index] *= -1
-
-        system.state = updated_state
+        code = self._validate(system)
+        response_index = system.num_qubits - 1
+        for qi, bit in enumerate(code):
+            if bit == "1":
+                system.apply_cnot(qi, response_index)
 
     def post_probe(self, system: "NQubitSystem") -> None:
-        secret_code = self._validate(system)
-
-        # Apply Hadamard only to input qubits
-        for qubit_index in range(len(secret_code)):
-            system.apply_h(qubit_index)
-
+        self._validate(system)
+        # Apply H to ALL qubits
+        for i in range(system.num_qubits):
+            system.apply_h(i)
 
 # %% [markdown]
 # ## Task 6: Implement the `Archimedes` oracle as a child of `Oracle`
@@ -1047,70 +1162,59 @@ class Archimedes(Oracle):
 
     def _validate(self, system: "NQubitSystem") -> list[str]:
         if system.num_qubits != 4:
-            raise IndexError("BernVaz Oracle is restricted to 4 qubits by ABC contract.")
-
+            raise IndexError("Archimedes expects a 4-qubit system")
         if len(self.codes) == 0:
             raise ValueError("Archimedes expects at least one code")
-
         for code in self.codes:
             if len(code) != 3:
                 raise ValueError("Each code must be a 3-bit string")
-
             for ch in code:
-                if ch != "0" and ch != "1":
-                    raise ValueError("Code must be a binary string")
-
+                if ch not in ("0", "1"):
+                    raise ValueError("Code must be binary")
         return self.codes
 
     def pre_probe(self, system: "NQubitSystem") -> None:
-        reset_state = [0.0] * (2 ** system.num_qubits)
-        reset_state[0] = 1.0
-        system.set_value(reset_state)
-        
         self._validate(system)
+        # Apply H to ALL qubits
+        for i in range(system.num_qubits):
+            system.apply_h(i)
 
-        response_qubit_index = system.num_qubits - 1
-        system.apply_not(response_qubit_index)
 
-        for qubit_index in range(system.num_qubits):
-            system.apply_h(qubit_index)
-
+    # Set: (000 010 110). We make a truth table of 0000 -> 0001. 0001 -> 0000. and so on. 
     def probe(self, system: "NQubitSystem") -> None:
         valid_codes = self._validate(system)
 
-        response_qubit_index = system.num_qubits - 1
-        response_bit_position = system.num_qubits - 1 - response_qubit_index
-        response_mask = 1 << response_bit_position
+        # target is the last qubit -> least significant bit of the basis index
+        target_mask = 1
 
         allowed_inputs = set()
         for code in valid_codes:
             allowed_inputs.add(int(code, 2))
 
-        updated_state = system.state.copy()
+        new_state = system.state.copy()
 
-        for state_index in range(len(system.state)):
-            # Only process states where response bit = 0
-            if (state_index & response_mask) != 0:
-                continue
+        for idx in range(len(system.state)):
+            # read the first 3 bits by dropping the last bit
+            input_value = idx >> 1
 
-            input_value = state_index >> 1
-
-            # Apply PHASE when input matches a code
+            # if x is in the set, flip the target bit
             if input_value in allowed_inputs:
-                paired_index = state_index | response_mask
+                flipped_idx = idx ^ target_mask
 
-                updated_state[state_index] *= -1
-                updated_state[paired_index] *= -1
+                # swap amplitudes once 
+                if idx < flipped_idx:
+                    temp = new_state[idx]
+                    new_state[idx] = new_state[flipped_idx]
+                    new_state[flipped_idx] = temp
 
-        system.state = updated_state
+        system.state = new_state
+
 
     def post_probe(self, system: "NQubitSystem") -> None:
         self._validate(system)
-
-        # Apply Hadamard only to input qubits
-        for qubit_index in range(system.num_qubits - 1):
-            system.apply_h(qubit_index)
-
+        # Apply H ONLY to the 3 input qubits (top wires)
+        for i in range(system.num_qubits - 1):
+            system.apply_h(i)
 
 # %% [markdown]
 # ## Task 7: Test Your Oracles:
@@ -1132,59 +1236,98 @@ class Archimedes(Oracle):
 # %%
 ## TODO: Oracle Tests
 
-def _expected_state_after_oracle(n: int, f) -> list[float]:
-    """
-    Compute the expected final quantum state after:
-      - pre_probe
-      - probe
-      - post_probe
+def _apply_h_to_state(state: list[float], num_qubits: int, qubit_index: int) -> list[float]:
+    bit_position = num_qubits - 1 - qubit_index
+    mask = 1 << bit_position
+    scale = 1.0 / (2 ** 0.5)
+    new_state = state.copy()
+    for index in range(len(state)):
+        if (index & mask) == 0:
+            partner_index = index | mask
+            amp_zero = state[index]
+            amp_one = state[partner_index]
+            new_state[index] = scale * (amp_zero + amp_one)
+            new_state[partner_index] = scale * (amp_zero - amp_one)
+    return new_state
 
-    Assumptions:
-    - There are n input qubits and 1 response qubit
-    - The response qubit is the last qubit; Big endian
-    """
 
+def _apply_cnot_to_state(state: list[float], num_qubits: int, control: int, target: int) -> list[float]:
+    control_mask = 1 << (num_qubits - 1 - control)
+    target_mask = 1 << (num_qubits - 1 - target)
+    new_state = state.copy()
+    for index in range(len(state)):
+        control_bit_is_one = (index & control_mask) != 0
+        target_bit_is_zero = (index & target_mask) == 0
+        if control_bit_is_one and target_bit_is_zero:
+            flipped_index = index | target_mask
+            if index < flipped_index:
+                temp = new_state[index]
+                new_state[index] = new_state[flipped_index]
+                new_state[flipped_index] = temp
+    return new_state
+
+
+def _expected_bernvaz_probe_state(secret_code: str, num_qubits: int) -> list[float]:
+    state = _expected_h_all_state(num_qubits)
+    response_index = num_qubits - 1
+    for qi, bit in enumerate(secret_code):
+        if bit == "1":
+            state = _apply_cnot_to_state(state, num_qubits, qi, response_index)
+    return state
+
+
+def _expected_bernvaz_state(secret_code: str) -> list[float]:
+    """Expected final state for BernVaz with diagram: H all -> CNOT oracle -> H all."""
+    num_qubits = len(secret_code) + 1
+    state = _expected_bernvaz_probe_state(secret_code, num_qubits)
+    for i in range(num_qubits):
+        state = _apply_h_to_state(state, num_qubits, i)
+    return state
+
+
+def _expected_archimedes_state(n: int, f) -> list[float]:
+    """Expected final state for Archimedes with diagram: H all -> phase oracle -> H on inputs only."""
     total_states = 2 ** (n + 1)
+    expected = [0.0 for _ in range(total_states)]
+    scale = 1.0 / (2 ** ((2 * n + 1) / 2))
 
-    expected_state = []
-    for _ in range(total_states):
-        expected_state.append(0.0)
-
-    normalization = 2 ** ((2 * n + 1) / 2)
-    scale = 1.0 / normalization
-
-    for output_value in range(2 ** n):
-
+    for y in range(2 ** n):
         phase_sum = 0
-
-        for input_value in range(2 ** n):
-
-            # Compute x · y (dot product mod 2)
-            common_bits = input_value & output_value
-            number_of_ones = bin(common_bits).count("1")
-            parity = number_of_ones % 2
-
-            # Compute phase contribution from oracle and Hadamards
-            oracle_output = f(input_value)
-            total_phase = oracle_output + parity
-
-            if total_phase % 2 == 1:
-                phase = -1
-            else:
-                phase = 1
-
+        for x in range(2 ** n):
+            parity = bin(x & y).count("1") % 2
+            phase = -1 if (f(x) + parity) % 2 == 1 else 1
             phase_sum += phase
 
-        amplitude = scale * phase_sum
+        amp = scale * phase_sum
+        base = y << 1
+        expected[base] = amp
+        expected[base | 1] = amp  # response qubit in |+>
+    return expected
 
-        base_index = output_value << 1
-        index_response_0 = base_index
-        index_response_1 = base_index | 1
 
-        expected_state[index_response_0] = amplitude
-        expected_state[index_response_1] = -amplitude
+def _expected_h_all_state(num_qubits: int) -> list[float]:
+    amp = 1.0 / (2 ** (num_qubits / 2))
+    return [amp for _ in range(2 ** num_qubits)]
 
-    return expected_state
+
+def _expected_phase_kickback_state(code: str, num_qubits: int) -> list[float]:
+    response_mask = 1
+    amp = 1.0 / (2 ** (num_qubits / 2))
+    expected = [amp for _ in range(2 ** num_qubits)]
+    for idx in range(len(expected)):
+        if (idx & response_mask) != 0:
+            continue
+        dot = 0
+        for qi, bit in enumerate(code):
+            if bit == "1":
+                bit_position = num_qubits - 1 - qi
+                if (idx & (1 << bit_position)) != 0:
+                    dot ^= 1
+        if dot == 1:
+            paired = idx | response_mask
+            expected[idx] *= -1
+            expected[paired] *= -1
+    return expected
 
 
 def test_oracle_is_abstract() -> bool:
@@ -1199,7 +1342,7 @@ def test_bernvaz_is_oracle() -> bool:
     if not issubclass(BernVaz, Oracle):
         return False
     try:
-        _ = BernVaz(["011"])
+        _ = BernVaz(["101"])
     except Exception:
         return False
     return True
@@ -1209,33 +1352,208 @@ def test_archimedes_is_oracle() -> bool:
     if not issubclass(Archimedes, Oracle):
         return False
     try:
-        _ = Archimedes(["101"])
+        _ = Archimedes(["010"])
     except Exception:
         return False
     return True
 
 
-def test_bernvaz() -> bool:
-    # codes = ["101"]
-    codes = ["001"]
+def test_bernvaz_pre_probe_state() -> bool:
     system = NQubitSystem(4)
-    oracle = BernVaz(codes)
+    oracle = BernVaz(["101"])
+    oracle.pre_probe(system)
+    expected = _expected_h_all_state(4)
+    return compare_lists(system.state, expected)
+
+
+def test_bernvaz_probe_state() -> bool:
+    code = "101"
+    system = NQubitSystem(4)
+    oracle = BernVaz([code])
+    oracle.pre_probe(system)
+    oracle.probe(system)
+    expected = _expected_bernvaz_probe_state(code, 4)
+    return compare_lists(system.state, expected)
+
+
+def test_bernvaz_post_probe_state() -> bool:
+    code = "101"
+    system = NQubitSystem(4)
+    oracle = BernVaz([code])
+    oracle.pre_probe(system)
+    oracle.probe(system)
+    oracle.post_probe(system)
+    expected = _expected_bernvaz_state(code)
+    return compare_lists(system.state, expected)
+
+
+def _expected_archimedes_probe_state(codes: list[str], num_qubits: int) -> list[float]:
+    """
+    Expected state after:
+      - H on all qubits
+      - Archimedes oracle (bit-flip on response if input in set)
+    """
+    amp = 1.0 / (2 ** (num_qubits / 2))
+    state = [amp for _ in range(2 ** num_qubits)]
+
+    allowed_inputs = {int(code, 2) for code in codes}
+    response_mask = 1  # last qubit (LSB)
+
+    new_state = state.copy()
+
+    for idx in range(len(state)):
+        input_value = idx >> 1
+        if input_value in allowed_inputs:
+            flipped = idx ^ response_mask
+            if idx < flipped:
+                temp = new_state[idx]
+                new_state[idx] = new_state[flipped]
+                new_state[flipped] = temp
+
+    return new_state
+
+
+def _expected_archimedes_final_state(codes: list[str]) -> list[float]:
+    """
+    Expected final state after:
+      - H on all
+      - Archimedes oracle
+      - H on input qubits only
+    """
+    num_qubits = 4
+    state = _expected_archimedes_probe_state(codes, num_qubits)
+
+    # apply H to input qubits only (0,1,2)
+    for i in range(3):
+        state = _apply_h_to_state(state, num_qubits, i)
+
+    return state
+
+
+def test_archimedes_pre_probe() -> bool:
+    system = NQubitSystem(4)
+    oracle = Archimedes(["010", "111"])
+    oracle.pre_probe(system)
+
+    expected = _expected_h_all_state(4)
+    return compare_lists(system.state, expected)
+
+
+def test_archimedes_probe() -> bool:
+    codes = ["010", "111"]
+    system = NQubitSystem(4)
+    oracle = Archimedes(codes)
+
+    oracle.pre_probe(system)
+    oracle.probe(system)
+
+    expected = _expected_archimedes_probe_state(codes, 4)
+    return compare_lists(system.state, expected)
+
+
+def test_archimedes_post_probe() -> bool:
+    codes = ["010", "111"]
+    system = NQubitSystem(4)
+    oracle = Archimedes(codes)
+
     oracle.pre_probe(system)
     oracle.probe(system)
     oracle.post_probe(system)
 
-    s_val = int(codes[0], 2)
-    def f(x: int) -> int:
-        return bin(x & s_val).count("1") % 2
+    expected = _expected_archimedes_final_state(codes)
+    return compare_lists(system.state, expected)
 
-    expected = _expected_state_after_oracle(3, f)
 
-    print("\nDEBUG STATE DUMP:")
-    for i, amp in enumerate(system.state):
-        if abs(amp) > 0.001:
-            # Check expected amplitude at this index
-            exp_amp = expected[i]
-            print(f"Index {i:04b} | Actual: {amp:.2f} | Expected: {exp_amp:.2f} | {'MATCH' if abs(amp - exp_amp) < 1e-3 else 'FAIL'}")
+def test_bernvaz_invalid_code_length() -> bool:
+    try:
+        system = NQubitSystem(4)
+        oracle = BernVaz(["10"])
+        oracle.pre_probe(system)
+        return False
+    except ValueError:
+        return True
+
+
+def test_bernvaz_invalid_code_characters() -> bool:
+    try:
+        system = NQubitSystem(4)
+        oracle = BernVaz(["10A"])
+        oracle.pre_probe(system)
+        return False
+    except ValueError:
+        return True
+
+
+def test_bernvaz_multiple_codes_rejected() -> bool:
+    try:
+        system = NQubitSystem(4)
+        oracle = BernVaz(["010", "111"])
+        oracle.pre_probe(system)
+        return False
+    except IndexError:
+        return True
+
+
+def test_bernvaz_wrong_qubits() -> bool:
+    try:
+        system = NQubitSystem(3)
+        oracle = BernVaz(["010"])
+        oracle.pre_probe(system)
+        return False
+    except IndexError:
+        return True
+
+
+def test_archimedes_empty_codes() -> bool:
+    try:
+        system = NQubitSystem(4)
+        oracle = Archimedes([])
+        oracle.pre_probe(system)
+        return False
+    except ValueError:
+        return True
+
+
+def test_archimedes_invalid_code_length() -> bool:
+    try:
+        system = NQubitSystem(4)
+        oracle = Archimedes(["1"])
+        oracle.pre_probe(system)
+        return False
+    except ValueError:
+        return True
+
+
+def test_archimedes_invalid_code_characters() -> bool:
+    try:
+        system = NQubitSystem(4)
+        oracle = Archimedes(["01X"])
+        oracle.pre_probe(system)
+        return False
+    except ValueError:
+        return True
+
+
+def test_archimedes_wrong_qubits() -> bool:
+    try:
+        system = NQubitSystem(5)
+        oracle = Archimedes(["010"])
+        oracle.pre_probe(system)
+        return False
+    except IndexError:
+        return True
+
+
+def test_bernvaz() -> bool:
+    codes = ["101"]
+    system = NQubitSystem(4)
+    oracle = BernVaz(codes)
+
+    oracle.pre_probe(system)
+    oracle.probe(system)
+    oracle.post_probe(system)
+
+    expected = _expected_bernvaz_state(codes[0])
     return compare_lists(system.state, expected)
 
 
@@ -1243,15 +1561,12 @@ def test_archimedes() -> bool:
     codes = ["010", "111"]
     system = NQubitSystem(4)
     oracle = Archimedes(codes)
+
     oracle.pre_probe(system)
     oracle.probe(system)
     oracle.post_probe(system)
 
-    code_values = {int(code, 2) for code in codes}
-    def f(x: int) -> int:
-        return 1 if x in code_values else 0
-
-    expected = _expected_state_after_oracle(3, f)
+    expected = _expected_archimedes_final_state(codes)
     return compare_lists(system.state, expected)
 
 
@@ -1260,6 +1575,20 @@ def run_oracle_tests() -> None:
         ("test_oracle_is_abstract", test_oracle_is_abstract),
         ("test_bernvaz_is_oracle", test_bernvaz_is_oracle),
         ("test_archimedes_is_oracle", test_archimedes_is_oracle),
+        ("test_bernvaz_pre_probe_state", test_bernvaz_pre_probe_state),
+        ("test_bernvaz_probe_state", test_bernvaz_probe_state),
+        ("test_bernvaz_post_probe_state", test_bernvaz_post_probe_state),
+        ("test_archimedes_pre_probe", test_archimedes_pre_probe),
+        ("test_archimedes_probe", test_archimedes_probe),
+        ("test_archimedes_post_probe", test_archimedes_post_probe),
+        ("test_bernvaz_invalid_code_length", test_bernvaz_invalid_code_length),
+        ("test_bernvaz_invalid_code_characters", test_bernvaz_invalid_code_characters),
+        ("test_bernvaz_multiple_codes_rejected", test_bernvaz_multiple_codes_rejected),
+        ("test_bernvaz_wrong_qubits", test_bernvaz_wrong_qubits),
+        ("test_archimedes_empty_codes", test_archimedes_empty_codes),
+        ("test_archimedes_invalid_code_length", test_archimedes_invalid_code_length),
+        ("test_archimedes_invalid_code_characters", test_archimedes_invalid_code_characters),
+        ("test_archimedes_wrong_qubits", test_archimedes_wrong_qubits),
         ("test_bernvaz", test_bernvaz),
         ("test_archimedes", test_archimedes),
     ]
@@ -1275,7 +1604,6 @@ def run_oracle_tests() -> None:
 
 run_oracle_tests()
 
-
 # %% [markdown]
 # # Submission
 # Congratulations on completing the lab!
@@ -1290,5 +1618,8 @@ run_oracle_tests()
 # 3.   Rename the downloaded file to `Lab5Answers.py`.
 # 4.   Upload the `Lab5Answers.py` file to Gradescope.
 # 5.   Ensure the autograder runs successfully.
+
+# %% [markdown]
+# 
 
 
